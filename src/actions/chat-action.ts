@@ -5,14 +5,15 @@ import { google } from '@ai-sdk/google';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getPineconeIndex } from '@/lib/pinecone';
 
-if (!process.env.GOOGLE_API_KEY) {
-    throw new Error('GOOGLE_API_KEY is not defined');
-}
-
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
-const embeddingModel = genAI.getGenerativeModel({ model: 'text-embedding-004' });
+// Google Generative AI will be initialized lazily
 
 export async function chatAction(message: string) {
+    if (!process.env.GOOGLE_API_KEY) {
+        throw new Error('GOOGLE_API_KEY is not defined');
+    }
+    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+    const embeddingModel = genAI.getGenerativeModel({ model: 'text-embedding-004' });
+
     // 1. Vectorize the user message
     const embeddingResult = await embeddingModel.embedContent(message);
     const embedding = embeddingResult.embedding.values;
@@ -46,5 +47,5 @@ export async function chatAction(message: string) {
         messages: [{ role: 'user', content: message }],
     });
 
-    return result.toDataStreamResponse();
+    return (result as any).toDataStreamResponse();
 }
