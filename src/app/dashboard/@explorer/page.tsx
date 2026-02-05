@@ -2,6 +2,7 @@ import { FamilyCard } from '@/components/explorer/family-card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { KnowledgeUpload } from '@/components/knowledge-upload';
 
 // Mock Data
 const MOCK_FAMILIES = [
@@ -48,7 +49,7 @@ export default function ExplorerPage() {
                     <h2 className="text-lg font-bold text-casa-night">Family Explorer</h2>
                     <p className="text-xs text-muted-foreground">Find families to support</p>
                 </div>
-                <Button variant="link" size="sm" className="text-casa-emerald h-auto p-0">View All</Button>
+                <KnowledgeUpload />
             </div>
 
             {/* Filters */}
