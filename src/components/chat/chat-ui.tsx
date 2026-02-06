@@ -1,18 +1,19 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
 import { Send, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Form, FormControl, FormField, FormItem } from '@/components/ui/form';
 import { cn } from '@/lib/utils';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 
 // Zod Schema for chat input
 const chatSchema = z.object({
@@ -21,11 +22,24 @@ const chatSchema = z.object({
 
 type ChatFormValues = z.infer<typeof chatSchema>;
 
+// Helper to extract text content from AI SDK v6 message parts
+function getMessageContent(message: { role: string; parts?: Array<{ type: string; text?: string }> }): string {
+    if (!message.parts) return '';
+    return message.parts
+        .filter((part): part is { type: 'text'; text: string } => part.type === 'text' && !!part.text)
+        .map(part => part.text)
+        .join('');
+}
+
 export function ChatUI() {
-    const { messages, input, setInput, handleInputChange, handleSubmit, isLoading } = useChat({
-        api: '/api/chat',
+    // AI SDK v6: Create transport with API endpoint
+    const transport = useMemo(() => new DefaultChatTransport({ api: '/api/chat' }), []);
+
+    const { messages, sendMessage, status } = useChat({
+        transport,
     });
 
+    const isLoading = status === 'streaming' || status === 'submitted';
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to bottom on new message
@@ -35,7 +49,7 @@ export function ChatUI() {
         }
     }, [messages]);
 
-    // Form handling
+    // Form handling with Zod validation
     const form = useForm<ChatFormValues>({
         resolver: zodResolver(chatSchema),
         defaultValues: {
@@ -43,43 +57,23 @@ export function ChatUI() {
         },
     });
 
-    // Sync React Hook Form with AI SDK input
-    const handleFormSubmit = async (data: ChatFormValues) => {
-        // Manually triggering the AI SDK submit
-        // We set the input state first to ensure useChat picks it up if needed, 
-        // although handleSubmit passes the event.
-        // Ideally, we just pass a synthetic event or call the submit logic.
-        // For simplicity with useChat + custom form, we can just call append() strictly or 
-        // let useChat handle the input state binding.
+    // Submit handler using sendMessage from AI SDK v6
+    const onSubmit = async (data: ChatFormValues) => {
+        if (!data.message.trim()) return;
 
-        // Simplest way: useChat standard submit requires an event.
-        // We can simulate it or just use append if we wanted to bypass 'input' state.
-        // But since we want to "mock" for now as per instructions (but connected via Zod),
-        // let's do the "Mock" alert but proceed with standard useChat for the future.
-
-        // INSTRUCTION: "laisse la logique d'envoi vide pour l'instant (mock)"
-        // I will currently NOT call the API.
-        // I will mock adding a user message to the UI state if possible, 
-        // OR just console log to satisfy the constraint.
-
-        console.log("Mock Submit:", data.message);
-        // setInput(data.message); // Sync with AI SDK
-        // handleSubmit(); // This would trigger the real API call
-        form.reset();
-    };
-
-    // Custom submit that bridges Zod and useChat (mocked for now)
-    const onSubmit = (data: ChatFormValues) => {
-        console.log("Zod Validated:", data);
-        // NOTE: Actual send logic paused as requested.
-        // To really "mock" the appearance, we could manually setMessages([...messages, ...])
-        // but useChat controls that.
+        try {
+            // AI SDK v6: sendMessage takes { text: string } format
+            await sendMessage({ text: data.message });
+            form.reset();
+        } catch (error) {
+            console.error('Error sending message:', error);
+        }
     };
 
     return (
         <div className="flex h-full flex-col bg-casa-white/50">
             {/* Header */}
-            <div className="flex items-center gap-3 border-b border-casa-emerald/10 p-4 backdrop-blur-sm">
+            <div className="flex items-center gap-3 border-b border-casa-emerald/10 p-4 backdrop-blur-sm shrink-0">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-casa-emerald/10 text-casa-emerald">
                     <Sparkles className="h-5 w-5" />
                 </div>
@@ -90,7 +84,7 @@ export function ChatUI() {
             </div>
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-hidden p-4">
+            <div className="flex-1 overflow-hidden p-4 min-h-0">
                 <ScrollArea className="h-full pr-4">
                     <div className="flex flex-col gap-6">
                         <AnimatePresence initial={false}>
@@ -116,7 +110,6 @@ export function ChatUI() {
                                         )}>
                                             {m.role === 'user' ? 'ME' : 'AI'}
                                         </AvatarFallback>
-                                        {/* {m.role !== 'user' && <AvatarImage src="/bot-avatar.png" />} */}
                                     </Avatar>
 
                                     <div className="flex flex-col gap-1 max-w-[80%]">
@@ -131,7 +124,7 @@ export function ChatUI() {
                                                     : "bg-white text-casa-night border border-gray-100 rounded-tl-sm"
                                             )}
                                         >
-                                            {m.content}
+                                            {getMessageContent(m)}
                                         </div>
                                     </div>
                                 </motion.div>
@@ -161,7 +154,7 @@ export function ChatUI() {
             </div>
 
             {/* Input Area */}
-            <div className="border-t border-casa-emerald/10 bg-white/60 p-4 backdrop-blur-md">
+            <div className="border-t border-casa-emerald/10 bg-white/60 p-4 backdrop-blur-md shrink-0">
                 <Form {...form}>
                     <form
                         onSubmit={form.handleSubmit(onSubmit)}

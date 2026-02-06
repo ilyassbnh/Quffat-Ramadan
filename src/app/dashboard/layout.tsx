@@ -42,18 +42,18 @@ export default function DashboardLayout({
                 </div>
             </aside>
 
-            {/* Main Content Grid: Chat (Center) | Explorer (Right) */}
-            <main className="flex flex-1 flex-col overflow-hidden sm:grid sm:grid-cols-[1fr_400px]">
+            {/* Main Content: Stacked on mobile, side-by-side on larger screens */}
+            <main className="flex flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-[1fr_350px] xl:grid-cols-[1fr_400px]">
 
-                {/* Chat Slot (Left/Center) */}
-                <div className="relative flex h-full flex-col overflow-hidden bg-casa-white/50 backdrop-blur-sm">
+                {/* Chat Slot (Top on mobile, Left on desktop) */}
+                <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-casa-white/50 backdrop-blur-sm lg:flex-none lg:h-full">
                     {/* Render chat slot predominantly. Children can be used for hidden page content or overlay */}
                     {chat}
                     <div className="hidden">{children}</div>
                 </div>
 
-                {/* Explorer Slot (Right) */}
-                <div className="relative flex h-full flex-col border-l border-casa-emerald/10 bg-casa-white/30 backdrop-blur-md">
+                {/* Explorer Slot (Bottom on mobile, Right on desktop) */}
+                <div className="relative flex min-h-0 flex-1 flex-col border-t border-casa-emerald/10 bg-casa-white/30 backdrop-blur-md lg:flex-none lg:h-full lg:border-l lg:border-t-0 overflow-auto">
                     {explorer}
                 </div>
             </main>

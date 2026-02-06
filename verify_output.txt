@@ -1,0 +1,20 @@
+Starting integration verification...
+Calling parsePDF from src/lib/parsers...
+Error parsing PDF: Error
+    at <anonymous> (C:\Users\benhi\OneDrive\Bureau\Simplon\casa-ramadan-2026\node_modules\pdf-parse\dist\pdf-parse\cjs\index.cjs:1:58358)
+    at Module.<anonymous> (C:\Users\benhi\OneDrive\Bureau\Simplon\casa-ramadan-2026\node_modules\pdf-parse\dist\pdf-parse\cjs\index.cjs:1:58386)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Object.transformer (C:\Users\benhi\AppData\Local\npm-cache\_npx\fd45a72a545557e9\node_modules\tsx\dist\register-D46fvsV_.cjs:3:1104)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at require (node:internal/modules/helpers:147:16) {
+  message: 'Page dictionary kid reference points to wrong type of object.',
+  name: 'UnknownErrorException',
+  details: 'FormatError: Page dictionary kid reference points to wrong type of object.'
+}
+VERIFICATION CRASHED: Error: Failed to parse PDF content: Page dictionary kid reference points to wrong type of object.
+    at parsePDF (C:\Users\benhi\OneDrive\Bureau\Simplon\casa-ramadan-2026\src\lib\parsers.ts:32:15)
+    at async verify (C:\Users\benhi\OneDrive\Bureau\Simplon\casa-ramadan-2026\verify-fix.ts:16:22)

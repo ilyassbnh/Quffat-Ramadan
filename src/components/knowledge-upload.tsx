@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { Upload, FileText, Loader2 } from "lucide-react"
-import { uploadDocument } from "@/actions/vector-action"
+import { uploadFile } from "@/actions/vector-action"
 import { Button } from "@/components/ui/button"
 import {
     Dialog,
@@ -46,7 +46,7 @@ export function KnowledgeUpload() {
             const formData = new FormData()
             formData.append("file", file)
 
-            const result = await uploadDocument(formData)
+            const result = await uploadFile(formData)
 
             if (result.success) {
                 toast({
@@ -64,10 +64,11 @@ export function KnowledgeUpload() {
                 })
             }
         } catch (error) {
+            console.error("Upload error:", error);
             toast({
                 variant: "destructive",
                 title: "Erreur",
-                description: "Une erreur inattendue est survenue.",
+                description: error instanceof Error ? error.message : "Une erreur inattendue est survenue.",
             })
         } finally {
             setIsUploading(false)
@@ -77,9 +78,9 @@ export function KnowledgeUpload() {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button className="bg-casa-emerald hover:bg-casa-emerald/90 text-white gap-2">
+                <Button className="bg-casa-emerald hover:bg-casa-emerald/90 text-white gap-2 shrink-0" size="sm">
                     <Upload className="h-4 w-4" />
-                    Ajouter un document
+                    <span className="hidden sm:inline">Ajouter un document</span>
                 </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
