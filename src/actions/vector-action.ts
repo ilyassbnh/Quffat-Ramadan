@@ -1,121 +1,131 @@
-'use server';
+"use server";
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { getPineconeIndex } from '@/lib/pinecone';
+import { Pinecone } from "@pinecone-database/pinecone";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { extractText } from "unpdf";
+import * as XLSX from "xlsx";
 
-if (!process.env.GOOGLE_API_KEY) {
-    throw new Error('GOOGLE_API_KEY is not defined');
-}
+const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY || "" });
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'text-embedding-004' });
+export async function uploadFile(formData: FormData) {
+    const file = formData.get("file") as File;
 
+    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_API_KEY || "";
+    if (!apiKey) {
+        console.error("❌ NO API KEY FOUND");
+        return { error: "Configuration Error: API Key manquante" };
+    }
+    console.log(`[uploadFile] Using API Key: ${apiKey.substring(0, 5)}...`);
+    const genAI = new GoogleGenerativeAI(apiKey);
 
-import { z } from 'zod';
-import { parsePDF, parseCSV } from '@/lib/parsers';
+    if (!file) {
+        return { error: "Aucun fichier fourni" };
+    }
 
-import * as xlsx from 'xlsx';
-
-// Utility for delaying execution (helpers for rate limits if needed)
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const DocumentSchema = z.object({
-    file: z.instanceof(File).refine((file) => file.size <= 5 * 1024 * 1024, {
-        message: 'File size must be less than 5MB',
-    }).refine((file) => ['application/pdf', 'text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(file.type), {
-        message: 'File type must be PDF, CSV or Excel (XLSX)',
-    }),
-});
-
-export async function uploadDocument(formData: FormData) {
     try {
-        const file = formData.get('file');
+        // Auth removed as requested
 
-        // 1. Validate Input
-        const validData = DocumentSchema.safeParse({ file });
-
-        if (!validData.success) {
-            return { success: false, error: validData.error.issues[0].message };
-        }
-
-        const validFile = validData.data.file;
-        const buffer = Buffer.from(await validFile.arrayBuffer());
         let chunks: string[] = [];
+        const bytes = await file.arrayBuffer();
+        const buffer = Buffer.from(bytes);
 
-        // 2. Process Content
-        if (validFile.type === 'application/pdf') {
-            const text = await parsePDF(buffer);
-            chunks = text.match(/.{1,1000}/g) || [];
-        } else if (validFile.type === 'text/csv' || validFile.type === 'application/vnd.ms-excel') {
-            const text = await validFile.text();
-            const rows = parseCSV<Record<string, unknown>>(text);
-            chunks = processRows(rows);
-        } else if (validFile.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
-            // XLSX handling
-            const workbook = xlsx.read(buffer, { type: 'buffer' });
-            const sheetName = workbook.SheetNames[0];
-            const sheet = workbook.Sheets[sheetName];
-            const rows = xlsx.utils.sheet_to_json<Record<string, unknown>>(sheet);
-            chunks = processRows(rows);
-        }
+        if (file.type === "application/pdf") {
+            // Extraction du texte PDF
+            try {
+                const { text: rawText } = await extractText(new Uint8Array(buffer), { mergePages: true });
+                const text = Array.isArray(rawText) ? rawText.join("\n") : (rawText || "");
 
-        if (chunks.length === 0) {
-            return { success: false, error: 'No content extracted from file' };
-        }
-
-        // Helper to process rows (shared between CSV and XLSX)
-        function processRows(rows: Record<string, unknown>[]): string[] {
-            return rows.map((row) => {
-                const nom = row['Nom'] || row['nom'] || 'Inconnu';
-                const quartier = row['Quartier'] || row['quartier'] || 'Inconnu';
-                if (row['Nom'] && row['Quartier']) {
-                    return `Famille ${nom} habite à ${quartier}. Détails: ${JSON.stringify(row)}`;
+                if (!text || text.trim().length === 0) {
+                    return { error: "Le PDF est vide ou illisible." };
                 }
-                return Object.entries(row).map(([k, v]) => `${k}: ${v}`).join(', ');
+                chunks = text.split(/\n\s*\n/).filter((chunk: string) => chunk.trim().length > 50);
+            } catch (pdfErr) {
+                console.error("PDF Parsing Error:", pdfErr);
+                return { error: "Erreur lors de la lecture du PDF. Est-il protégé par mot de passe ?" };
+            }
+        } else if (
+            file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+            file.type === "application/vnd.ms-excel" ||
+            file.type === "text/csv"
+        ) {
+            // Extraction Excel / CSV
+            const workbook = XLSX.read(buffer, { type: "buffer" });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[];
+
+            if (jsonData.length === 0) {
+                return { error: "Le fichier Excel est vide." };
+            }
+
+            chunks = jsonData.map((row) => {
+                const rowContent = Object.entries(row)
+                    .map(([key, value]) => `${key}: ${value}`)
+                    .join(", ");
+                return `Registre: ${rowContent}`;
             });
         }
 
         if (chunks.length === 0) {
-            return { success: false, error: 'No content extracted from file' };
+            return { error: "Aucun segment n'a pu être extrait." };
         }
 
-        // 3. Generate Embeddings & Store
-        const index = getPineconeIndex();
+        const embedModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
+        const metaModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const index = pc.index(process.env.PINECONE_INDEX_NAME || "casa-ramadan-2026");
 
-        // Process in batches of 10 to avoid rate limits/timeouts
-        const batchSize = 10;
+        // Global Metadata Extraction
+        const docSummary = chunks.slice(0, 10).join("\n").substring(0, 3000);
+        const metaPrompt = `Analyse ce document d'association. 
+        Extrais: quartier, besoin_principal, priorite. 
+        Texte: "${docSummary}"
+        Réponds UNIQUEMENT en JSON: {"neighborhood": "...", "need": "...", "status": "..."}`;
 
-        for (let i = 0; i < chunks.length; i += batchSize) {
-            const batch = chunks.slice(i, i + batchSize);
-
-            await Promise.all(batch.map(async (textChunk, batchIndex) => {
-                if (!textChunk.trim()) return;
-
-                const result = await model.embedContent(textChunk);
-                const embedding = result.embedding.values;
-
-                await index.upsert([
-                    {
-                        id: `${validFile.name}-${i + batchIndex}-${crypto.randomUUID()}`,
-                        values: embedding,
-                        metadata: {
-                            filename: validFile.name,
-                            type: validFile.type === 'application/pdf' ? 'pdf' : 'csv',
-                            text: textChunk,
-                            uploadedAt: new Date().toISOString()
-                        },
-                    },
-                ] as any);
-            }));
+        let globalMetadata = { neighborhood: "Casablanca", need: "Sadaqa", status: "Standard" };
+        try {
+            const metaResult = await metaModel.generateContent(metaPrompt);
+            const metaText = metaResult.response.text();
+            const cleanedJson = metaText.replace(/```json|```/g, "").trim();
+            // Try to find JSON object in string if not clean
+            const jsonMatch = cleanedJson.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                globalMetadata = JSON.parse(jsonMatch[0]);
+            } else {
+                globalMetadata = JSON.parse(cleanedJson);
+            }
+        } catch (e) {
+            console.warn("Metadata extraction failed, using defaults.");
         }
 
-        return { success: true, count: chunks.length };
+        const limitedChunks = chunks.slice(0, 100);
+        const vectors = [];
 
-    } catch (error) {
-        console.error('SERVER ACTION ERROR:', error);
-        if (error instanceof Error) {
-            console.error('Stack:', error.stack);
+        for (const chunk of limitedChunks) {
+            const res = await embedModel.embedContent({
+                content: { parts: [{ text: chunk }] },
+                taskType: "RETRIEVAL_DOCUMENT",
+                // @ts-ignore
+                outputDimensionality: 768
+            });
+
+            vectors.push({
+                id: `doc-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                values: res.embedding.values,
+                metadata: {
+                    text: chunk,
+                    category: "famille",
+                    source: file.name,
+                    ...globalMetadata
+                }
+            });
         }
-        return { success: false, error: error instanceof Error ? error.message : 'Unknown processing error' };
+
+        // Correct Pinecone v7.0.0 syntax for this project
+        await index.upsert({ records: vectors as any });
+
+        return { success: true, message: `${vectors.length} segments indexés.` };
+    } catch (error: any) {
+        console.error("Vector Action Error:", error);
+        return { error: `Échec: ${error.message}` };
     }
 }
