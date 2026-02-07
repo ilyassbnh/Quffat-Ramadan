@@ -23,14 +23,11 @@ export async function uploadFile(formData: FormData) {
     }
 
     try {
-        // Auth removed as requested
-
         let chunks: string[] = [];
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
 
         if (file.type === "application/pdf") {
-            // Extraction du texte PDF
             try {
                 const { text: rawText } = await extractText(new Uint8Array(buffer), { mergePages: true });
                 const text = Array.isArray(rawText) ? rawText.join("\n") : (rawText || "");
@@ -48,7 +45,6 @@ export async function uploadFile(formData: FormData) {
             file.type === "application/vnd.ms-excel" ||
             file.type === "text/csv"
         ) {
-            // Extraction Excel / CSV
             const workbook = XLSX.read(buffer, { type: "buffer" });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
@@ -70,11 +66,10 @@ export async function uploadFile(formData: FormData) {
             return { error: "Aucun segment n'a pu être extrait." };
         }
 
-        const embedModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
         const metaModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const index = pc.index(process.env.PINECONE_INDEX_NAME || "casa-ramadan-2026");
+        const index = pc.index(process.env.PINECONE_INDEX_NAME || "quffat-ramadan");
 
-        // Global Metadata Extraction
+        // Global Metadata Extraction using Gemini
         const docSummary = chunks.slice(0, 10).join("\n").substring(0, 3000);
         const metaPrompt = `Analyse ce document d'association. 
         Extrais: quartier, besoin_principal, priorite. 
@@ -86,7 +81,6 @@ export async function uploadFile(formData: FormData) {
             const metaResult = await metaModel.generateContent(metaPrompt);
             const metaText = metaResult.response.text();
             const cleanedJson = metaText.replace(/```json|```/g, "").trim();
-            // Try to find JSON object in string if not clean
             const jsonMatch = cleanedJson.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 globalMetadata = JSON.parse(jsonMatch[0]);
@@ -98,32 +92,24 @@ export async function uploadFile(formData: FormData) {
         }
 
         const limitedChunks = chunks.slice(0, 100);
-        const vectors = [];
 
-        for (const chunk of limitedChunks) {
-            const res = await embedModel.embedContent({
-                content: { parts: [{ text: chunk }] },
-                taskType: "RETRIEVAL_DOCUMENT",
-                // @ts-ignore
-                outputDimensionality: 768
-            });
+        // Use Pinecone's integrated embeddings (llama-text-embed-v2)
+        // The index auto-generates 768-dim embeddings from the 'text' field
+        const records = limitedChunks.map((chunk, idx) => ({
+            _id: `doc-${Date.now()}-${idx}-${Math.random().toString(36).substring(7)}`,
+            text: chunk,
+            category: "famille",
+            source: file.name,
+            ...globalMetadata
+        }));
 
-            vectors.push({
-                id: `doc-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-                values: res.embedding.values,
-                metadata: {
-                    text: chunk,
-                    category: "famille",
-                    source: file.name,
-                    ...globalMetadata
-                }
-            });
-        }
+        console.log(`[uploadFile] Upserting ${records.length} records with integrated embeddings...`);
 
-        // Correct Pinecone v7.0.0 syntax for this project
-        await index.upsert({ records: vectors as any });
+        // Pass records array directly to upsertRecords for integrated embeddings
+        await index.upsertRecords(records);
 
-        return { success: true, message: `${vectors.length} segments indexés.` };
+        console.log(`[uploadFile] Successfully indexed ${records.length} segments`);
+        return { success: true, message: `${records.length} segments indexés.` };
     } catch (error: any) {
         console.error("Vector Action Error:", error);
         return { error: `Échec: ${error.message}` };
