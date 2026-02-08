@@ -14,6 +14,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Form, FormControl, FormField, FormItem } from '@/components/ui/form';
 import { cn } from '@/lib/utils';
 import { useEffect, useRef, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
 
 // Zod Schema for chat input
 const chatSchema = z.object({
@@ -124,7 +125,26 @@ export function ChatUI() {
                                                     : "bg-white text-casa-night border border-gray-100 rounded-tl-sm"
                                             )}
                                         >
-                                            {getMessageContent(m)}
+                                            {m.role === 'user' ? (
+                                                getMessageContent(m)
+                                            ) : (
+                                                <ReactMarkdown
+                                                    components={{
+                                                        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                                                        strong: ({ children }) => <strong className="font-bold text-casa-emerald">{children}</strong>,
+                                                        ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+                                                        ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+                                                        li: ({ children }) => <li className="text-sm">{children}</li>,
+                                                        h1: ({ children }) => <h1 className="text-lg font-bold mb-2 text-casa-night">{children}</h1>,
+                                                        h2: ({ children }) => <h2 className="text-base font-bold mb-2 text-casa-night">{children}</h2>,
+                                                        h3: ({ children }) => <h3 className="text-sm font-bold mb-1 text-casa-night">{children}</h3>,
+                                                        code: ({ children }) => <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono text-casa-emerald">{children}</code>,
+                                                        pre: ({ children }) => <pre className="bg-gray-100 p-3 rounded-lg overflow-x-auto my-2 text-xs">{children}</pre>,
+                                                    }}
+                                                >
+                                                    {getMessageContent(m)}
+                                                </ReactMarkdown>
+                                            )}
                                         </div>
                                     </div>
                                 </motion.div>
